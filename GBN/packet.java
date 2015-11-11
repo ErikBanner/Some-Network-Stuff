@@ -17,7 +17,7 @@ public class packet {
 	
 	// hidden constructor to prevent creation of invalid packets
 	private packet(int Type, int SeqNum, String strData) throws Exception {
-		// if data segment larger than allowed, then throw exception
+		// if data seqment larger than allowed, then throw exception
 		if (strData.length() > maxDataLength)
 			throw new Exception("data too large (max 500 chars)");
 			

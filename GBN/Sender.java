@@ -8,80 +8,58 @@ public class Sender {
 	private static int emulatorPortForSenderData;
 	private static int senderPortForEmulatorACKs;
 	private static String transferredFileName;
-	private static int base = 0;
-	private static int mult = 0;
-	private static int nextSeq = 0;
-	private static final int windowSize = 10;
+	private volatile static int base = 0;
+	private volatile static int mult = 0;
+	private volatile static int nextSeq = 0;
 	private static long totalPackets;
-	private static Logger logger = Logger.getLogger(Sender.class.getName());
+	private static final int WINDOWSIZE = 10;
+	private static final int DATALENGTH = 1; // This is the size of a packet data. Maximum size 500 enforce by class Packet.
+	private static final int MOD = 32;
+	private static final int BLOCKDURATION = 200;
+	private static final String SEQNUMLOG = "seqnum.log";
+	private static final String ACKLOG = "ack.log";
 
+	// Thread for sending packet.
 	static class Send extends Thread {
 		public void run() {
 			try {
-								int lost = 0;
-								boolean delayed25 = false;
-								boolean sent25 = false;
-
-				FileOutputStream logSeq = new FileOutputStream("seqnum.log", false);
+				FileOutputStream logSeq = new FileOutputStream(SEQNUMLOG, false);
 				RandomAccessFile raf = new RandomAccessFile(transferredFileName, "r");
 				DatagramSocket senderSocket = new DatagramSocket();
 				boolean eotSent = false;
-				long remainder = raf.length() % 12;
+				// Compute number of packets to be sent.
+				long remainder = raf.length() % DATALENGTH;
 				if (remainder == 0) {
-					totalPackets = raf.length() / 12;
+					totalPackets = raf.length() / DATALENGTH;
 				}
 				else {
-					totalPackets = raf.length() / 12 + 1;
+					totalPackets = raf.length() / DATALENGTH + 1;
 				}
-				System.out.println("Total packets: " + totalPackets);
+
 				while (true) {
-					raf.seek(nextSeq()*12);
-					System.out.println("seek " + nextSeq);
-					if (nextSeq < base + mult*32 + windowSize) {
-						//System.out.println("nextSeq < base + mult*32 + windowSize = " + nextSeq + " < " + base + " + " + mult + "*32 + " + windowSize);
-						byte[] data = new byte[12];
-						if (raf.read(data) != -1) {
-							System.out.println("preparing packet" + nextSeq);
-							if (nextSeq == 12 && lost < 1) {
-								logSeq.write(String.valueOf(nextSeq % 32).getBytes());
-						        logSeq.write('\n');
-								lost++;
-								nextSeq++;
-							}
-							else {
-								if (nextSeq == 25 && !delayed25) {
-									logSeq.write(String.valueOf(nextSeq % 32).getBytes());
-						        	logSeq.write('\n');
-									nextSeq++;
-									System.out.println("packet 25 delayed");
-									delayed25 = true;
-									continue;
-								}
-								else if (nextSeq == 27 && !sent25) {
-									packet pkt = packet.createPacket(25, new String("25xxxxxxxxxx"));
-									byte[] sendData = pkt.getUDPdata();
-									DatagramPacket hold = new DatagramPacket(sendData, sendData.length, emulatorHostAddr, emulatorPortForSenderData);
-									senderSocket.send(hold);
-									sent25 = true;
-								}
-								packet pkt = packet.createPacket(nextSeq, new String(data));
-								byte[] sendData = pkt.getUDPdata();
-								DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, emulatorHostAddr, emulatorPortForSenderData);
-								senderSocket.send(sendPacket);
-								System.out.println("packet " + nextSeq + " sent with content: " + new String(data));
-						        logSeq.write(String.valueOf(nextSeq % 32).getBytes());
-						        logSeq.write('\n');
-								nextSeq++;
-							}
+					if (nextSeq < base + mult*MOD + WINDOWSIZE) { // Check if window is full.
+						byte[] data = new byte[DATALENGTH];
+						raf.seek(nextSeq*DATALENGTH); // Set the file pointer according to the window position.
+						if (raf.read(data) != -1) { // Check if reaches EOF.
+							// Send the packet.
+						    System.out.println("sending pkt " + nextSeq + "  with content: " + new String(data));
+							packet pkt = packet.createPacket(nextSeq, new String(data));
+							byte[] sendData = pkt.getUDPdata();
+							DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, emulatorHostAddr, emulatorPortForSenderData);
+							senderSocket.send(sendPacket); 
+							// Write to seqnum.log
+							logSeq.write(String.valueOf(nextSeq % MOD).getBytes());
+							logSeq.write('\n');
+							// Increment nextSeq.
+							nextSeq++;
 						}
-						else {
-							//System.out.println("base: " + base + " mult*32: " + mult*32 + "eotSent: " + eotSent);
-							if ((base + mult * 32) >= totalPackets && !eotSent) {
-								packet eot = packet.createEOT(base);
+						else { // EOF
+							if ((base + mult * MOD) >= totalPackets && !eotSent) { // All packets sent received ACKs.
+								// Send EOT
+								packet eot = packet.createEOT(999999);
 								byte[] eotbytes = eot.getUDPdata();
 								DatagramPacket sendEOT = new DatagramPacket(eotbytes, eotbytes.length, emulatorHostAddr, emulatorPortForSenderData);
 								senderSocket.send(sendEOT);
-								System.out.println("EOT sent. Received " + base + " many packets");
 								eotSent = true;
 							}
 						}
@@ -97,42 +75,44 @@ public class Sender {
 	static class Receive extends Thread {
 		public void run() {
 			try {
-				FileOutputStream logAck = new FileOutputStream("ack.log", false);
+				FileOutputStream logAck = new FileOutputStream(ACKLOG, false);
 				DatagramSocket receiveSocket = new DatagramSocket(senderPortForEmulatorACKs);
-				receiveSocket.setSoTimeout(600);
+				receiveSocket.setSoTimeout(BLOCKDURATION);
 				while (true) {
 			    	byte[] receiveData = new byte[1024];
 			    	DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);
 					try {
 						receiveSocket.receive(receivePacket);
 						packet ackPacket = packet.parseUDPdata(receivePacket.getData());
-						if (ackPacket.getType() == 0) {
-							System.out.println("get ACK for " + ackPacket.getSeqNum());
+						if (ackPacket.getType() == 0) { // The packet received is an ACK.
+							// Write to ack.log
 							logAck.write(String.valueOf(ackPacket.getSeqNum()).getBytes());
 							logAck.write('\n');
-							if (ackPacket.getSeqNum() >= base) {
-								base = ackPacket.getSeqNum() + 1;
-								if (base == 32) {
+							// Shift window.
+							if (ackPacket.getSeqNum() >= base && ackPacket.getSeqNum() < base + WINDOWSIZE) {
+							    base = ackPacket.getSeqNum() + 1;
+							    if (base == MOD) {
 									mult++;
 									base = 0;
-								}
-								if (base + mult*32 == nextSeq) {
-									receiveSocket.setSoTimeout(0);
-								}
-								else {
-									receiveSocket.setSoTimeout(600);
-								}
+							    }
+							}
+							else if (ackPacket.getSeqNum() < base) {
+							    if (base > MOD-WINDOWSIZE && base < MOD) {
+									if (ackPacket.getSeqNum() < (base + WINDOWSIZE) % MOD) {
+									    base = ackPacket.getSeqNum() + 1;
+									    mult++;
+									}
+							    }
 							}
 						}
-						else if (ackPacket.getType() == 2) {
-							System.out.println("transfer finished. Close now");
+						else if (ackPacket.getType() == 2) { // The packet received is an EOT.
+							System.out.println("Transfer finished. Close now");
 							System.exit(0);
 						}
 					}
 					catch (SocketTimeoutException ste) {
-						System.out.println("timeout");
-						nextSeq = base;
-						System.out.println("nextSeq is now " + nextSeq);
+						System.out.println("Timeout. Resending…");
+						nextSeq = base + mult*MOD; // Resend all not acknowledged packet upon timeout.
 					}
 				}
 			}
@@ -144,11 +124,7 @@ public class Sender {
 
 	public static void main(String[] args) throws Exception {
 		checkInput(args);
-		System.out.println("emulatorHostAddr: " + emulatorHostAddr);
-		System.out.println("emulatorPortForSenderData: " + emulatorPortForSenderData);
-		System.out.println("senderPortForEmulatorACKs: " + senderPortForEmulatorACKs);
-		System.out.println("transferredFileName: " + transferredFileName);
-
+		// Start two threads.
 		Send sendThread = new Send();
 		Receive receiveThread = new Receive();
 		sendThread.start();

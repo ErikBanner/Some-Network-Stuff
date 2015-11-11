@@ -7,80 +7,52 @@ public class Receiver {
 	private static int receiverPortForEmulatorPackets;
 	private static String savedFileName;
 	private static int expectedSeq = 0;
+	private static final String ARRIVALLOG = "arrival.log";
+	private static final int MOD = 32;
 
 
 	public static void main(String[] args) throws Exception {
 		checkInput(args);
-		System.out.println("emulatorHostAddr: " + emulatorHostAddr);
-		System.out.println("emulatorPortForReceiverData: " + emulatorPortForReceiverData);
-		System.out.println("receiverPortForEmulatorPackets: " + receiverPortForEmulatorPackets);
-		System.out.println("savedFileName: " + savedFileName);
 
 		DatagramSocket receiveSocket = new DatagramSocket(receiverPortForEmulatorPackets);
 		FileOutputStream out = new FileOutputStream(savedFileName, false);
-		FileOutputStream log = new FileOutputStream("arrival.log", false);
+		FileOutputStream log = new FileOutputStream(ARRIVALLOG, false);
 
-				boolean lost5 = false;
-				boolean delayed27 = false;
-				boolean sent27 = false;
-		
 		while (true) {
+			// Keep blocking waiting for incoming packets.
 	    	byte[] receiveData = new byte[1024];
 	    	DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);
 			receiveSocket.receive(receivePacket); 
 			packet dataPacket = packet.parseUDPdata(receivePacket.getData());
-			System.out.println("Receiver received packet with seqNum " + dataPacket.getSeqNum());
 
-			if (dataPacket.getType() == 1) {
+			if (dataPacket.getType() == 1) { // Received a packet.
+				// Write to arrival.log
 				log.write(String.valueOf(dataPacket.getSeqNum()).getBytes());
 				log.write('\n');
-				if (dataPacket.getSeqNum() == expectedSeq % 32) {
-					// if (dataPacket.getSeqNum() == 5 && !lost) {
-					// 	lost = true;
-					// }
-					// else {
-					// 	try {
-					// 	    Thread.sleep(200);                 //1000 milliseconds is one second.
-					// 	} catch(InterruptedException ex) {
-					// 	    Thread.currentThread().interrupt();
-					// 	}
-					// }
-					if (expectedSeq == 5 && !lost5) {
-						expectedSeq++;
-						lost5 = true;
-						continue;
-					}
-					else if (expectedSeq == 27 && !delayed27) {
-						expectedSeq++;
-						continue;
-					}
-					else if (expectedSeq == 29 && !sent27) {
-						packet ack = packet.createACK(27);
-						byte[] sendData = ack.getUDPdata();
-						DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, emulatorHostAddr, emulatorPortForReceiverData);
-						receiveSocket.send(sendPacket);
-					}
-					System.out.println("creating ACK with seqNum: " + dataPacket.getSeqNum());
-					System.out.println("this is " + expectedSeq + " packet received");
-					packet ack = packet.createACK(dataPacket.getSeqNum());
+
+				if (dataPacket.getSeqNum() == expectedSeq % MOD) { // The packet is expected.
+					// Create ACK and send.
+					packet ack = packet.createACK(dataPacket.getSeqNum()); 
 					byte[] sendData = ack.getUDPdata();
 					DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, emulatorHostAddr, emulatorPortForReceiverData);
 					receiveSocket.send(sendPacket);
-					expectedSeq++;
-					byte[] dataToWrite = dataPacket.getData();
-					out.write(dataToWrite);
+					
+					expectedSeq++; // Increment expected sequence number
+					byte[] dataToWrite = dataPacket.getData(); 
+					out.write(dataToWrite); // Write data to file
 					continue;
-					// }
 				}
 			}
-			else if (dataPacket.getType() == 2) {
+			else if (dataPacket.getType() == 2) { // Received EOT
 				byte[] eotbytes = dataPacket.getUDPdata();
 				DatagramPacket sendBackEOT = new DatagramPacket(eotbytes, eotbytes.length, emulatorHostAddr, emulatorPortForReceiverData);
 				receiveSocket.send(sendBackEOT);
 				System.out.println("EOT sent back. Close now.");
 				System.exit(0);
 			}
-			if (expectedSeq != 0) {
+
+			// Discard the unexpected packet and resend ACK for latest in-order packet.
+			if (expectedSeq != 0) { // Do nothing is nothing has yet been received.
 				packet ack = packet.createACK((expectedSeq-1));
 				byte[] sendData = ack.getUDPdata();
 				DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, emulatorHostAddr, emulatorPortForReceiverData);
