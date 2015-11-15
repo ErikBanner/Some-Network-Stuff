@@ -48,8 +48,8 @@ public class Receiver {
 				DatagramPacket sendBackEOT = new DatagramPacket(eotbytes, eotbytes.length, emulatorHostAddr, emulatorPortForReceiverData);
 				receiveSocket.send(sendBackEOT);
 				System.out.println("EOT sent back. Close now.");
-				out.close()
-				log.close()
+				out.close();
+				log.close();
 				System.exit(0);
 			}
 

@@ -39,8 +39,8 @@ public class Sender {
 
 				while (true) {
 					if (EOT == true) {
-						logSeq.close()
-						raf.close()
+						logSeq.close();
+						raf.close();
 					}
 					if (nextSeq < base + mult*MOD + WINDOWSIZE) { // Check if window is full.
 						byte[] data = new byte[DATALENGTH];
