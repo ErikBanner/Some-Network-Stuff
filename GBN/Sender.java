@@ -13,11 +13,12 @@ public class Sender {
 	private volatile static int nextSeq = 0;
 	private static long totalPackets;
 	private static final int WINDOWSIZE = 10;
-	private static final int DATALENGTH = 1; // This is the size of a packet data. Maximum size 500 enforce by class Packet.
+	private static final int DATALENGTH = 500; // This is the size of a packet data. Maximum size 500 enforce by class Packet.
 	private static final int MOD = 32;
 	private static final int BLOCKDURATION = 200;
 	private static final String SEQNUMLOG = "seqnum.log";
 	private static final String ACKLOG = "ack.log";
+	private volatile static boolean EOT = false;
 
 	// Thread for sending packet.
 	static class Send extends Thread {
@@ -37,12 +38,15 @@ public class Sender {
 				}
 
 				while (true) {
+					if (EOT == true) {
+						logSeq.close()
+						raf.close()
+					}
 					if (nextSeq < base + mult*MOD + WINDOWSIZE) { // Check if window is full.
 						byte[] data = new byte[DATALENGTH];
 						raf.seek(nextSeq*DATALENGTH); // Set the file pointer according to the window position.
 						if (raf.read(data) != -1) { // Check if reaches EOF.
 							// Send the packet.
-						    System.out.println("sending pkt " + nextSeq + "  with content: " + new String(data));
 							packet pkt = packet.createPacket(nextSeq, new String(data));
 							byte[] sendData = pkt.getUDPdata();
 							DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, emulatorHostAddr, emulatorPortForSenderData);
@@ -56,7 +60,7 @@ public class Sender {
 						else { // EOF
 							if ((base + mult * MOD) >= totalPackets && !eotSent) { // All packets sent received ACKs.
 								// Send EOT
-								packet eot = packet.createEOT(999999);
+								packet eot = packet.createEOT(999999); // sequence number for EOT doesn't matter.
 								byte[] eotbytes = eot.getUDPdata();
 								DatagramPacket sendEOT = new DatagramPacket(eotbytes, eotbytes.length, emulatorHostAddr, emulatorPortForSenderData);
 								senderSocket.send(sendEOT);
@@ -107,6 +111,8 @@ public class Sender {
 						}
 						else if (ackPacket.getType() == 2) { // The packet received is an EOT.
 							System.out.println("Transfer finished. Close now");
+							EOT = true;
+							logAck.close();
 							System.exit(0);
 						}
 					}
