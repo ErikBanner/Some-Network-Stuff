@@ -50,7 +50,7 @@ public class Receiver {
 				System.out.println("EOT sent back. Close now.");
 				out.close();
 				log.close();
-				System.exit(0);
+				return;
 			}
 
 			// Discard the unexpected packet and resend ACK for latest in-order packet.

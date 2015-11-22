@@ -41,6 +41,7 @@ public class Sender {
 					if (EOT == true) {
 						logSeq.close();
 						raf.close();
+						return;
 					}
 					if (nextSeq < base + mult*MOD + WINDOWSIZE) { // Check if window is full.
 						byte[] data = new byte[DATALENGTH];
@@ -113,7 +114,7 @@ public class Sender {
 							System.out.println("Transfer finished. Close now");
 							EOT = true;
 							logAck.close();
-							System.exit(0);
+							return;
 						}
 					}
 					catch (SocketTimeoutException ste) {
