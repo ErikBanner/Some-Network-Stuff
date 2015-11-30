@@ -13,7 +13,7 @@ class router {
 	private static RIBEntry[] RIB = new RIBEntry[NUMBER_ROUTER];
 	private static FileOutputStream log;
 	private static String logStr;
-	private static LinkCost[][] neighbours = new LinkCost[NUMBER_ROUTER][NUMBER_ROUTER];
+	private static LinkCost[][] neighbours = new LinkCost[NUMBER_ROUTER][NUMBER_ROUTER]; // This is used to store neighbours of this router
 
 	private static class RIBEntry {
 		int destRouter;
@@ -173,13 +173,11 @@ class router {
 			ByteBuffer buffer = ByteBuffer.wrap(data);
 			buffer.order(ByteOrder.LITTLE_ENDIAN);
 			int numLink = buffer.getInt();
-			// System.out.println("numLink" + String.valueOf(numLink));
 			LinkCost[] linkcost = new LinkCost[NUMBER_ROUTER];
 			for (int i=0; i<numLink; i++){
 				int link = buffer.getInt();
 				int cost = buffer.getInt();
 				linkcost[i] = new LinkCost(link, cost);
-				// System.out.println("link " + String.valueOf(a) + " costs " + String.valueOf(b));
 			}
 			return new CircuitDB(numLink, linkcost);
 		}
@@ -395,6 +393,7 @@ class router {
 		}
 	}
 
+	// The shortest path first algorithm
 	private static void spf() throws Exception {
 		List<Integer> nodes = new ArrayList<>();
 		nodes.add(RouterID);
